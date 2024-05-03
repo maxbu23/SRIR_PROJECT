@@ -1,5 +1,5 @@
 USAGE:
-    mkdir build
-    cd build
-    cmake ..
-    make out
+    $ mkdir build
+    $ cd build
+    $ cmake ..
+    $ make out
