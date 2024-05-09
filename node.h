@@ -8,11 +8,18 @@
 #include <string>
 #include <array>
 #include <algorithm>
+#include <iostream>
 
 #define N 3
 
-struct Node
-{
+int isSafe(int x, int y);
+std::array<std::array<int, N>, N> getInputArray(const std::string& filename);
+void print2dArray(const std::array<std::array<int, N>, N>& arr);
+std::pair<int, int> getBlankPosition(const std::array<std::array<int, N>, N>& board);
+
+static const std::array<std::array<int, N>, N> finalBoard = getInputArray("../pattern.txt");
+
+struct Node {
     Node* parent;
  
     std::array<std::array<int, N>, N> mat;
@@ -21,17 +28,13 @@ struct Node
     int cost = INT_MAX;
     int level = 0;
 
-    static std::array<std::array<int, N>, N> finalBoard;
-
-    Node(const std::array<std::array<int, N>, N>& initial, int blankX, int blankY)
-    {
+    Node(const std::array<std::array<int, N>, N>& initial, int blankX, int blankY) {
         mat = initial;
         x = blankX;
         y = blankY;
     }
-
-    Node copy()
-    {
+    
+    Node copy() {
         Node node(mat, x, y);
 
         node.parent = this;
@@ -41,27 +44,24 @@ struct Node
         return node;
     }
 
-    void swapBlank(int oldX, int oldY, int newX, int newY)
-    {
+    void swapBlank(int oldX, int oldY, int newX, int newY) {
         x = newX;
         y = newY;
         std::swap(mat[oldX][oldY], mat[newX][newY]);
         level++;
     }
 
-    void printMatrix()
-    {
-        for (int i = 0; i < N; i++)
-        {
-            for (int j = 0; j < N; j++)
-                printf("%d ", mat[i][j]);
-            printf("\n");
+    void printMatrix() {
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
+                std::cout << mat[i][j] << " ";
+            }
+            std::cout << std::endl;
         }
-        printf("\n");
+        std::cout << std::endl;
     }
 
-    void calculateCost()
-    {
+    void calculateCost() {
         cost = 0;
         for (int i = 0; i < N; i++)
             for (int j = 0; j < N; j++)
@@ -69,21 +69,17 @@ struct Node
                     cost++;
     }
 
-    bool isSafe(int x, int y)
-    {
+    bool isSafe(int x, int y) {
         return (x >= 0 && x < N && y >= 0 && y < N);
     }
 
-    std::string path()
-    {
+    std::string path() {
         return "Number of levels from start: " + std::to_string(level);
     }
 
-    void serialize(int* data)
-    {
+    void serialize(int* data) {
         for (int i = 0; i < N; i++)
-            for (int j = 0; j < N; j++)
-            {
+            for (int j = 0; j < N; j++) {
                 data[i*N + j] = mat[i][j];
             }
 
@@ -93,11 +89,9 @@ struct Node
         data[12] = level;
     }
 
-    void deserialize(int* data)
-    {
+    void deserialize(int* data) {
         for (int i = 0; i < N; i++)
-            for (int j = 0; j < N; j++)
-            {
+            for (int j = 0; j < N; j++) {
                 mat[i][j] = data[i*N + j];
             }
 
@@ -107,13 +101,10 @@ struct Node
         level = data[12];
     }
 
-    friend bool operator==(const Node& node1, const Node& node2)
-    {
-        for (int i = 0; i < N; i++)
-        {
+    friend bool operator==(const Node& node1, const Node& node2) {
+        for (int i = 0; i < N; i++) {
             for (int j = 0; j < N; j++)
-                if (node1.mat[i][j] != node2.mat[i][j])
-                {
+                if (node1.mat[i][j] != node2.mat[i][j]) {
                     return false;
                 }
         }
@@ -121,12 +112,7 @@ struct Node
         return true;
     }
 
-    friend bool operator>(const Node& node1, const Node& node2)
-    {
+    friend bool operator>(const Node& node1, const Node& node2) {
         return (node1.cost + node1.level) > (node2.cost + node2.level);
     }
 };
-
-int isSafe(int x, int y);
-std::array<std::array<int, N>, N> getInputArray(const std::string& filename);
-std::pair<int, int> getBlankPosition(const std::array<std::array<int, N>, N>& board);

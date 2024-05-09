@@ -8,6 +8,7 @@
 #include <chrono>
 #include <string>
 #include <fstream>
+#include <iostream>
 #include "node.h"
 #include "mpi.h"
 
@@ -19,32 +20,24 @@
 std::vector<Node> visitedNodes;
 std::string solutionPath;
 
-int row[] = { 1, 0, -1, 0 };
-int col[] = { 0, -1, 0, 1 };
+const int rowToMove[] = { 1, 0, -1, 0 };
+const int colToMove[] = { 0, -1, 0, 1 };
+const int IterationsPerCheck = 1000;
 
+void solve(const std::array<std::array<int, N>, N>& initial) {
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-
-void solve(const std::array<std::array<int, N>, N>& initial)
-{
-    int numprocs, myid, request = 1;
+    int numprocs, currentId, request = 1;
     int data[DATASIZE];
-    MPI_Status status;
-    auto start = std::chrono::steady_clock::now();
+    auto startTimer = std::chrono::steady_clock::now();
 
-    // 1. Initialize MPI
+    MPI_Status status;
     MPI_Comm world = MPI_COMM_WORLD;
-    MPI_Comm_size( world, &numprocs );
-    MPI_Comm_rank( world, &myid );
+    MPI_Comm_size(world, &numprocs);
+    MPI_Comm_rank(world, &currentId);
 
     std::vector<Node> nodesStack;
  
-    // 2. Set first node
-    if (myid == MASTER) 
-    {
+    if (currentId == MASTER) {
         auto [x, y] = getBlankPosition(initial);
         Node root = Node(initial, x, y);
         root.calculateCost();
@@ -53,39 +46,34 @@ void solve(const std::array<std::array<int, N>, N>& initial)
     }
 
     int foundSolution = 0, receivedSolution = 0;
-    const int workPerCheck = 1000;
-    int workCounter = workPerCheck;
+    int IterationCounter = numprocs;
  
-    while (!foundSolution)
-    {
-        // 3. Do some work
-        while (!nodesStack.empty() && workCounter)
-        {
-            workCounter--;
-            Node min = nodesStack.back();
+    while (!foundSolution) {
+
+        while (!nodesStack.empty() && IterationCounter) {
+            IterationCounter--;
+            Node lastNode = nodesStack.back();
     
             nodesStack.pop_back();
-            if (visitedNodes.size()%1000 == 0) printf("Proc %u: visited nodes = %lu\n", myid, visitedNodes.size());
-    
-            if (min.cost == 0)
-            {
-                printf("Found!\n");
-                solutionPath = min.path();
-                min.printMatrix();
-                foundSolution = myid + 1;
+            if (visitedNodes.size() % 2000 == 0) {
+                std::cout << "Proc " << currentId << ": visited nodes = " << visitedNodes.size() << std::endl;
+            }
+            if (lastNode.cost == 0) {
+                printf("Found in proc %u!\n", currentId);
+                solutionPath = lastNode.path();
+                printf("%s\n", solutionPath.c_str());
+                lastNode.printMatrix();
+                foundSolution = currentId + 1;
                 break;
             }
  
-            for (int i = 0; i < 4; i++)
-            {
-                if (isSafe(min.x + row[i], min.y + col[i]))
-                {        
-                    Node child = min.copy();
-                    child.swapBlank(min.x, min.y, min.x + row[i], min.y + col[i]);
+            for (int i = 0; i < 4; i++) {
+                if (isSafe(lastNode.x + rowToMove[i], lastNode.y + colToMove[i])) {        
+                    Node child = Node(lastNode);
+                    child.swapBlank(lastNode.x, lastNode.y, lastNode.x + rowToMove[i], lastNode.y + colToMove[i]);
                     child.calculateCost(); 
 
-                    if ((std::find(visitedNodes.begin(), visitedNodes.end(), child) == visitedNodes.end()))
-                    {
+                    if ((std::find(visitedNodes.begin(), visitedNodes.end(), child) == visitedNodes.end())) {
                         nodesStack.push_back(child);
                         visitedNodes.push_back(child);
                     }
@@ -93,75 +81,54 @@ void solve(const std::array<std::array<int, N>, N>& initial)
             }
         }
 
-        //4. After some work, check if solution was found by MPI_Allreduce
-        MPI_Allreduce( &foundSolution, &receivedSolution, 1, MPI_INT, MPI_MAX, world);
-        if (receivedSolution != 0)
-        {
+        MPI_Allreduce(&foundSolution, &receivedSolution, 1, MPI_INT, MPI_MAX, world);
+        if (receivedSolution) {
             break;
         }
 
-        workCounter = workPerCheck;
+        IterationCounter = IterationsPerCheck;
 
-        //5. Handle job requests by MPI_Send and MPI_Recv
-        if (myid == MASTER)
-        {
-            for (int i=0; i<numprocs-1; i++)
-            {
-                MPI_Recv( &request, 1, MPI_INT, MPI_ANY_SOURCE, REQUEST, world, &status );
-                if (request)
-                {
-                    //Send data to workers
+        if (currentId == MASTER) {
+            for (int i=0; i<numprocs-1; i++) {
+                MPI_Recv(&request, 1, MPI_INT, MPI_ANY_SOURCE, REQUEST, world, &status);
+                if (request) {
                     nodesStack.front().serialize(data);
                     nodesStack.erase(nodesStack.begin());
-                    MPI_Send( data, DATASIZE, MPI_INT, status.MPI_SOURCE, REPLY, world );
+                    MPI_Send(data, DATASIZE, MPI_INT, status.MPI_SOURCE, REPLY, world);
                 }
             }
-        }
-        else
-        {
-            if (nodesStack.empty())
-            {
+        } else {
+            if (nodesStack.empty()) {
               request = 1;
-              MPI_Send( &request, 1, MPI_INT, MASTER, REQUEST, world );
-              MPI_Recv( data, DATASIZE, MPI_INT, MASTER, REPLY, world, &status );
+              MPI_Send(&request, 1, MPI_INT, MASTER, REQUEST, world);
+              MPI_Recv(data, DATASIZE, MPI_INT, MASTER, REPLY, world, &status);
               
-              //Add new node to stack
               Node newNode = Node(initial, 0, 0);
               newNode.deserialize(data);
               nodesStack.push_back(newNode);
               visitedNodes.push_back(newNode);
-            }
-            else
-            {
+            } else {
               request = 0;
               MPI_Send( &request, 1, MPI_INT, MASTER, REQUEST, world );
             }
         }
     }
 
-    //6. Save solution in output.txt
-    auto end = std::chrono::steady_clock::now();
-    if (myid == MASTER)
-    {
+    auto endTimer = std::chrono::steady_clock::now();
+    if (currentId == MASTER) {
         std::ofstream file;
         file.open("output.txt");
-        file << solutionPath << std::endl;
-        file << "Solution found in: " << std::chrono::duration_cast<std::chrono::seconds>(end - start).count() <<" seconds\n"; 
+        file << solutionPath.c_str() << std::endl;
+        file << "Solution found in: " << std::chrono::duration_cast<std::chrono::milliseconds>(endTimer - startTimer).count() / 1000.0f <<" seconds\n"; 
         file.close();
     }
 }
- 
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+int main(int argc, char **argv) {
 
-
-int main(int argc, char **argv)
-{
     MPI_Init( &argc, &argv );
     
-    std::array<std::array<int, N>, N> initial = getInputArray("input.txt");
+    std::array<std::array<int, N>, N> initial = getInputArray("../input.txt");
     solve(initial);
     
     MPI_Finalize();
