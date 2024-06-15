@@ -1,0 +1,2 @@
+Number of levels from start: 16577
+Solution found in: 16 seconds
